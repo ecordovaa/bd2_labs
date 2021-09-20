@@ -12,7 +12,7 @@ using namespace std;
 class SequentialFile {
 private:
     const string fileName = "Data/seqfile.dat";
-    int size, heapSize, minIndex; // Tamaño de archivo, tamaño de aux e indice al menor elemento
+    int size {}, heapSize {}, minIndex {}; // Tamaño de archivo, tamaño de aux e indice al menor elemento
     int binarySearch(const int& key);
     void reorganize();
     void addMin(SeqFile::Record record); //Add cuando se inserta al inicio
@@ -209,6 +209,7 @@ void SequentialFile::reorganize(){
 
     // Reinsertamos los registros ya ordenados
     insertAll(all);
+    heapSize = 0;
 }
 
 // Add para el caso especifico donde el elemento a insertar es menor que el mínimo código en main
@@ -216,10 +217,8 @@ void SequentialFile::addMin(SeqFile::Record record){
     fstream file(fileName, ios::binary | ios::in | ios::out);
     heapSize++;
     int minKey;
-    cout << minIndex << endl;
     file.seekg(minIndex * sizeof(SeqFile::Record));
     file.read((char*) &minKey, sizeof(int));
-    cout << minKey << " - " << record.codigo << ". \n";
     if (record.codigo <= minKey){
         record.next = minIndex * sizeof(SeqFile::Record);
         minIndex = size + heapSize;
@@ -228,7 +227,7 @@ void SequentialFile::addMin(SeqFile::Record record){
         int nextKey, nextIdx, prevIdx = minIndex * sizeof(SeqFile::Record);
         file.seekg(minIndex * sizeof(SeqFile::Record));
         file.read((char*) &minKey, sizeof(int));
-        file.seekg(minIndex * sizeof(SeqFile::Record) + (sizeof(SeqFile::Record)- sizeof(int)));
+        file.seekg(minIndex * sizeof(SeqFile::Record) + (sizeof(SeqFile::Record) - sizeof(int)));
         file.read((char*) &nextIdx, sizeof(int));
         file.seekg(nextIdx);
         file.read((char*) &nextKey, sizeof(int));

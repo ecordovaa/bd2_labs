@@ -43,7 +43,6 @@ namespace SeqFile {
         {48,"Ray","Derecho",10,0},
         {49,"Zahara","CS",2,0},
         {50,"Alexia","CS",10,0},
-        {51,"Ray","Derecho",10,0},
+        {51,"Ray","Derecho",10,0}
     };
-
 }
