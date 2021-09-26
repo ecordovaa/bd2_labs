@@ -1,134 +1,213 @@
-#include <iostream>
 #include <fstream>
+#include <iostream>
+#include "lib.hpp"
+#include <limits>
+#include <string>
 #include <vector>
-#include <algorithm>
-#include "lib.hpp" 
-using namespace std;
 #define TAM_PAGE 4096
 
-
-//" Constantes M y K {{{1
+int d = 0;
+//0 1 2 3 4   5
 constexpr int M = (TAM_PAGE - sizeof(long))/(sizeof(long) + sizeof(int));
 constexpr int K = (TAM_PAGE - sizeof(long) - sizeof(int))/sizeof(Record);
 
-
-//" Binary search maleado {{{1
+//" closeBinarySearch {{{1
 int closeBinarySearch(int arr[], int l, int r ,int x){
-    if(r > l){
+
+    if(r > l && r-l != 1){
         int mid = l+(r-l)/2;
-        if(arr[mid] == x)
+        if(arr[mid] == x){
             return mid;
+        }
         if(arr[mid] > x)
             return closeBinarySearch(arr, l, mid -1 , x);
-        return closeBinarySearch(arr, mid + l, r, x);
+        return closeBinarySearch(arr, mid + 1, r, x);
     }
-        return l;
+    if(r == l)    
+        return(arr[l]<x)? l+1:l;
+    return -1;
+    
 }
-
 
 //" Bucket {{{1
 struct Bucket{
+    int size = 0;
     int keys[M];
     long pages[M+1];
     
-    //Bucket() {{{2
-    Bucket(){}
-    //" Bucket(fileName, position) {{{2
-    Bucket(string fileName, long position=0){
-        fstream file;
-        file.open(fileName, fstream::in | fstream::binary);
-        file.seekg(position, ios::beg);
+    Bucket(){
+        for(int i = 0; i< M; i++){
+            keys[i] = std::numeric_limits<int>::max();
+            pages[i] = 0;
+        }
+        pages[M] = 0;
+    
+    }
+    void load(std::string fileName, long position = 0){
+        std::fstream file;
+        file.open(fileName, std::fstream::in | std::fstream::binary);
+        file.seekg(position, std::ios::beg);
         for(int i = 0; i < 2*M +1;i++){
-            if(!i%2)
+            if(i%2 == 0){
                 file.read((char*)&pages[i/2], sizeof(pages[i/2]));
-            else 
-                file.read((char*)&keys[i/2], sizeof(pages[i/2]));
+            }
+            else{ 
+                if(file.read((char*)&keys[i/2], sizeof(keys[i/2])))
+                    size++;
+            }
         }
         file.close();
-    } 
-    //" findNextBucket(key) {{{2
-    long findNextBucket(int key){
-        return pages[closeBinarySearch(keys,0,M,key)]; 
+    }
+
+    long findNextPage(int key){
+        return pages[closeBinarySearch(keys, 0, M - 1, key)];
     }
 };
+//" Funciones y sobrecargas {{{1 
+std::ostream & operator <<(std::ostream & os, Bucket & b){
+    for(int i = 0 ; i < 2*M +1 ; i++){
+        if(i%2==0){
+            os<<"P"<<b.pages[i/2]<<" ";
+        }
+        else
+            os <<"K"<< b.keys[i/2]<<" ";
+    }
+    os << std::endl;
+    os <<"size: "<< b.size<<std::endl;
+    return os;
+}
 
+void updateRecord(Record& record, long& position){
+    std::fstream file;
+    file.open("data.dat", std::fstream::out | std::fstream::binary);
+    file.seekg(position, std::ios::beg);
+    file.write((char*)&record, sizeof(record));
+    file.close();
+}
+
+long appendNewRecordOnFile(Record record){
+    std::fstream file;
+    long last;
+    file.open("data.dat", std::fstream::app | std::fstream::binary);
+    file.write((char*)&record, sizeof(record));
+    last = file.tellg();
+    file.close();
+    return last - sizeof(record);
+
+}
+
+void updateIndex(int key, long position){
+    std::fstream file;
+    file.open("index1.dat", std::fstream::app | std::fstream::binary);
+    file.write((char*)& key, sizeof(key));
+    file.write((char*)& position, sizeof(position));
+    file.close();
+}
 //" DataPage {{{1
 struct DataPage{
+
     Record records[K];
     int size;
     long nextPage = -1;
-    //" DataPage() {{{2
-    DataPage(){}
-    //" DataPage(fileName, position) {{{2
-    DataPage(string fileName, long position=0){
-        fstream file;
-        file.open(fileName, fstream::in | fstream::binary);
-        file.seekg(position, ios::beg);
-        for(int i = 0; i<K; i++)
-            file.read((char*)&records[i], sizeof(records[i]));
+
+    DataPage(){
+        size = 0;
+    }
+    
+    void load(std::string fileName="data.dat", long position=0){
+        std::fstream file;
+        long positionToLoad = position;
+        file.open(fileName, std::fstream::in | std::fstream::binary);
+        while(positionToLoad != -1){
+            if(size < K){
+                file.seekg(positionToLoad, std::ios::beg);
+                file.read((char*)& records[size], sizeof(records[size]));
+                positionToLoad = records[size].nextRecord;
+                size++;
+            }
+            if(size == K){
+            nextPage = positionToLoad;
+            positionToLoad = -1;
+            }
+        }
         file.close();
     }
-    //" bringRecord(key) {{{2
-    Record bringRecord(int key){
-        for(int i = 0; i < size; i++){
-            if(key == records[i].codigo)
+
+    Record linearSearch(int key){
+        if(nextPage != -1 && key > records[K-1].codigo){
+            DataPage temp;
+            temp.load("data.dat", nextPage);
+            return temp.linearSearch(key);
+        }
+        for(int i = 0;i < size; i++){
+            if(records[i].codigo == key)
                 return records[i];
         }
-        Record vacio;
-        return vacio;
+        return {0,0,0,0,-2};
+    }
+
+    void tryAddRecord(Record& record){
+        if(size==0){
+            long longius;
+            longius = appendNewRecordOnFile(record);
+            records[0] = record;
+            updateIndex(record.codigo, longius);
+            size++;
+        }
+        if(size < K){
+            int i;
+            for(i = 0;records[i].codigo <= record.codigo && i < size ;i++);
+            record.nextRecord = records[i].nextRecord;
+            records[i].nextRecord = appendNewRecordOnFile(record);
+            updateRecord(records[i], records[i-1].nextRecord);
+            records[size] = record;
+            size++;
+        }
+        if(size == K){
+
+            DataPage nueva;
+            long next;
+            nueva.load("data.dat", next = appendNewRecordOnFile(record));
+            nextPage = next;
+        }
     }
 };
 
- 
-//" IsamFile {{{1
-class IsamFile {
-//" private {{{2
-private:
-    const string fileName = "Data/isam.dat";
-    // -- Declarar los indices (crecen hasta 3 veces) --
-    const string indexName = "index.dat";
-    const string index2Name = "index2.dat";
-    const string index3Name = "index3.dat";
-    // -- Declarar factor de bloque --
+//" Isam {{{ 1
+class Isam{
+    public:
+        Isam(std::string fileName){
+            this->fileName = fileName;
+            root = 0;
+        }
+        void add(Record record){
+            DataPage temp;
+            temp.load(fileName, searchFromRoot(record.codigo));
+            temp.tryAddRecord(record);
+        }
+        Record search(int key){
+            DataPage temp;
+            temp.load(fileName,searchFromRoot(key));
+            return temp.linearSearch(key);
+        }
+        std::vector<Record> rangeSearch(int start, int end){
+           // [4 93 1001]23903809280 
+            std::vector<Record> result;
+           return result; 
+        }
 
-    //" public {{{2
-public:
-    IsamFile();
-    void add(Record record);
-    Record search(const int& key);
-    vector<Record> rangeSearch(int begin, int end);
+    private:
+        int root;
+        std::string fileName;
+        std::string indexFile[3] = {"index1.dat", "index2.dat", "index3.dat"}; 
+        long searchFromRoot(int key){
+            long position = 0;
+            for(int i = 0 ; i<= root; i++){
+                Bucket index;
+                index.load(indexFile[i],position);
+                position =  index.findNextPage(key);
+            }
+            return position;
+        }
+        
 };
-
-//" add {{{1
-// O(n/BLOCK_SIZE): Reduce los accesos a memoria llenando blockes, no unidades.
-void IsamFile::add(Record record){
-    fstream file;
-    file.open(fileName, fstream::out | fstream::binary);
-    file.seekg(0,ios::end);
-    long position = file.tellg();
-    int key = record.codigo;
-    file.write((char*)& record, sizeof(record));
-    file.close();
-    Bucket index(indexName);
-    Bucket index2(index2Name, index.findNextBucket(record.codigo));
-    Bucket index3(index3Name, index2.findNextBucket(record.codigo));
-    DataPage data(fileName, index3.findNextBucket(record.codigo));
-
-}
-//" search {{{1
-// O(lgn/BLOCK_SIZE): Busqueda binaria + técnica de páginacion por bloques.
-Record IsamFile::search(const int& key){
-    Bucket index(indexName);
-    Bucket index2(index2Name, index.findNextBucket(key));
-    Bucket index3(index3Name, index2.findNextBucket(key));
-    DataPage data(fileName, index3.findNextBucket(key));
-    return data.bringRecord(key);
-}
-
-//" rangeSearch {{{1
-// O(lgn/BLOCK_SIZE + n): Búsqueda individual + más una cantidad arbitraria de registros
-// Note que el número de overflow pages podría ser incluso mayor que n.
-// En ese caso extremo, este algoritmo es tan poco eficiente como una búsqueda lineal.
-vector<Record> IsamFile::rangeSearch(int begin, int end){
-
-}
